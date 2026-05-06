@@ -13,6 +13,12 @@ import numpy as np
 from typing import List, Optional, Dict
 import warnings
 
+try:
+    import holidays as holidays_lib
+    _HOLIDAYS_AVAILABLE = True
+except ImportError:
+    _HOLIDAYS_AVAILABLE = False
+
 
 class FeatureEngineer:
     """
@@ -127,10 +133,19 @@ class FeatureEngineer:
         df['is_weekend'] = df['day_of_week'].isin([5, 6]).astype(int)
         df['is_night'] = df['hour'].isin(range(0, 6)).astype(int)
         df['is_peak_hour'] = df['hour'].isin([8, 9, 10, 17, 18, 19, 20]).astype(int)
-        
+
         # Season (meteorological)
         df['season'] = df['month'] % 12 // 3 + 1  # 1=Winter, 2=Spring, 3=Summer, 4=Fall
-        
+
+        # Public holidays — reduce price on non-working days
+        if _HOLIDAYS_AVAILABLE:
+            country_holidays = holidays_lib.Germany() if self.zone == 'DE-LU' else holidays_lib.Spain()
+            df['is_holiday'] = df['timestamp'].dt.date.map(
+                lambda d: int(d in country_holidays)
+            ).astype(int)
+        else:
+            df['is_holiday'] = 0
+
         return df
     
     def _add_lag_features(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -139,22 +154,22 @@ class FeatureEngineer:
         
         # Price lags (most important!)
         if 'price_eur_mwh' in df.columns:
-            for lag in [1, 2, 3, 6, 12, 24, 48, 168]:  # 1h, 2h, 3h, 6h, 12h, 1d, 2d, 1w
+            for lag in [1, 2, 3, 6, 12, 24, 48, 168, 336, 504]:  # up to 3 weeks
                 df[f'price_lag_{lag}h'] = df['price_eur_mwh'].shift(lag)
-        
+
         # Load lags
         if 'total_load_mw' in df.columns:
-            for lag in [1, 24, 168]:
+            for lag in [1, 24, 168, 336]:
                 df[f'load_lag_{lag}h'] = df['total_load_mw'].shift(lag)
-        
+
         # Renewable generation lags
         if 'total_renewable_mw' in df.columns:
-            for lag in [1, 24]:
+            for lag in [1, 24, 168]:
                 df[f'renewable_lag_{lag}h'] = df['total_renewable_mw'].shift(lag)
-        
+
         # Residual load lags
         if 'residual_load_mw' in df.columns:
-            for lag in [1, 24, 168]:
+            for lag in [1, 24, 168, 336]:
                 df[f'residual_load_lag_{lag}h'] = df['residual_load_mw'].shift(lag)
         
         return df

@@ -324,8 +324,8 @@ class EnergyChartsLoader:
             if col in df.columns:
                 feature_cols.append(col)
         
-        # Keep key fossil sources (marginal cost setters), removed fossil_coal-derived_gas (only in DE)
-        for col in ['fossil_gas', 'fossil_hard_coal', 'fossil_brown_coal_lignite',
+        # Keep key fossil sources (marginal cost setters), removed fossil_hard_coal & fossil_coal-derived_gas (only in DE)
+        for col in ['fossil_gas', 'fossil_brown_coal_lignite',
                    'fossil_oil']:
             if col in df.columns:
                 feature_cols.append(col)
