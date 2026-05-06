@@ -231,11 +231,12 @@ class EnergyChartsLoader:
 
         # Extract all generation sources with their original names
         for prod in data['production_types']:
-            name = prod.get('name', '').lower().replace(' ', '_').replace('/', '_')
+            name = prod.get('name', '').lower().replace(' ', '_').replace('/', '_').replace('-', '_')
             values = np.asarray(prod.get('data', []), dtype=float)
             df[name] = values
 
         # Create aggregated features for price forecasting
+
         
         # 1. Total renewable generation (key price driver)
         renewable_cols = [col for col in df.columns if any(x in col for x in
@@ -308,23 +309,29 @@ class EnergyChartsLoader:
         # High renewable share pushes expensive fossil plants out of merit order
         if 'residual_load_mw' in df.columns and 'total_load_mw' in df.columns:
             df['residual_load_ratio'] = df['residual_load_mw'] / df['total_load_mw']
+
+        if 'wind_onshore' in df.columns:
+            df['wind'] = df['wind_onshore']
+
+            if 'wind_offshore' in df.columns:
+                df['wind'] += df['wind_offshore']
         
         # Select final feature columns for modeling
         feature_cols = ['timestamp']
         
         # Keep individual renewable sources (weather-dependent)
-        for col in ['wind_onshore', 'wind_offshore', 'solar', 'hydro_run-of-river']:
+        for col in ['wind', 'solar', 'hydro_run-of-river']:
             if col in df.columns:
                 feature_cols.append(col)
         
-        # Keep key fossil sources (marginal cost setters)
+        # Keep key fossil sources (marginal cost setters), removed fossil_coal-derived_gas (only in DE)
         for col in ['fossil_gas', 'fossil_hard_coal', 'fossil_brown_coal_lignite',
-                   'fossil_oil', 'fossil_coal-derived_gas']:
+                   'fossil_oil']:
             if col in df.columns:
                 feature_cols.append(col)
         
-        # Keep other important sources
-        for col in ['nuclear', 'biomass', 'hydro_water_reservoir']:
+        # Keep other important sources, removed nuclear (not in DE)
+        for col in ['biomass', 'hydro_water_reservoir']:
             if col in df.columns:
                 feature_cols.append(col)
         
@@ -554,6 +561,207 @@ class WeatherDataLoader:
         return df
 
 
+
+
+
+class FuelPriceLoader:
+    """
+    Load fuel and carbon prices that drive electricity marginal costs.
+    
+    Key commodities:
+    - Natural Gas (TTF): Main marginal cost setter in Europe
+    - Coal (API2): For coal-fired generation
+    - CO2 EUA: Carbon emission allowances (critical for fossil fuel costs)
+    - Oil (Brent): Less direct but affects overall energy markets
+    """
+    
+    # Public data sources for fuel prices
+    FUEL_DATA_SOURCES = {
+        'gas_ttf': 'https://www.theice.com/products/27996665/Dutch-TTF-Gas-Futures',
+        'coal_api2': 'https://www.theice.com/products/219/Rotterdam-Coal-Futures',
+        'co2_eua': 'https://www.eex.com/en/market-data/environmental-markets/spot-market',
+        'oil_brent': 'https://www.investing.com/commodities/brent-oil-historical-data'
+    }
+    
+    def __init__(self, cache_dir: Optional[Path] = None):
+        """
+        Initialize fuel price loader.
+        
+        Parameters
+        ----------
+        cache_dir : Path, optional
+            Directory to cache downloaded fuel price data
+        """
+        self.cache_dir = Path(cache_dir) if cache_dir else Path("data/external")
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+    
+    def load_fuel_prices(
+        self,
+        start_date: Union[str, datetime],
+        end_date: Union[str, datetime],
+        use_cache: bool = True
+    ) -> pd.DataFrame:
+        """
+        Load historical fuel and carbon prices.
+        
+        Parameters
+        ----------
+        start_date : str or datetime
+            Start date
+        end_date : str or datetime
+            End date
+        use_cache : bool, default=True
+            Use cached data if available
+            
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame with columns:
+            - timestamp: UTC timestamp (daily resolution)
+            - gas_ttf_eur_mwh: TTF Natural Gas price (EUR/MWh)
+            - coal_api2_usd_ton: API2 Coal price (USD/ton)
+            - co2_eua_eur_ton: EUA Carbon price (EUR/ton CO2)
+            - oil_brent_usd_barrel: Brent Crude Oil price (USD/barrel)
+            
+            Derived features:
+            - gas_marginal_cost: Gas generation cost including CO2 (EUR/MWh)
+            - coal_marginal_cost: Coal generation cost including CO2 (EUR/MWh)
+        """
+        if isinstance(start_date, str):
+            start_date = pd.to_datetime(start_date)
+        if isinstance(end_date, str):
+            end_date = pd.to_datetime(end_date)
+        
+        # Check cache
+        cache_file = self.cache_dir / f"fuel_prices_{start_date.strftime('%Y%m%d')}_{end_date.strftime('%Y%m%d')}.csv"
+        
+        if use_cache and cache_file.exists():
+            print(f"Loading cached fuel prices from {cache_file}")
+            df = pd.read_csv(cache_file, parse_dates=['timestamp'])
+            return df
+        
+        # Download data
+        print(f"Downloading fuel prices from {start_date.date()} to {end_date.date()}")
+        df = self._download_fuel_prices(start_date, end_date)
+        
+        # Cache
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        df.to_csv(cache_file, index=False)
+        print(f"Cached fuel prices to {cache_file}")
+        
+        return df
+    
+    def _download_fuel_prices(
+        self,
+        start_date: datetime,
+        end_date: datetime
+    ) -> pd.DataFrame:
+        """
+        Download fuel prices from public sources.
+        
+        Note: This is a simplified implementation. In production, you would:
+        1. Use APIs from ICE, EEX, or financial data providers
+        2. Handle authentication and rate limits
+        3. Implement proper error handling and retries
+        
+        For this hackathon, we'll use a combination of:
+        - Synthetic data based on realistic patterns
+        - Manual CSV files if you have access to historical data
+        """
+        print("  ⚠️  Using synthetic fuel price data for demonstration")
+        print("  💡 For production: Replace with real data from ICE/EEX APIs or CSV files")
+        
+        # Generate date range (daily resolution for fuel prices)
+        dates = pd.date_range(start=start_date, end=end_date, freq='D', tz='UTC')
+        
+        # Synthetic fuel prices with realistic patterns
+        # Based on 2024-2026 European energy market conditions
+        np.random.seed(42)
+        n_days = len(dates)
+        
+        # TTF Gas: ~30-50 EUR/MWh with volatility
+        gas_base = 40.0
+        gas_trend = np.linspace(0, -5, n_days)  # Slight downward trend
+        gas_seasonal = 10 * np.sin(2 * np.pi * np.arange(n_days) / 365)  # Seasonal
+        gas_noise = np.random.normal(0, 3, n_days)
+        gas_ttf = gas_base + gas_trend + gas_seasonal + gas_noise
+        gas_ttf = np.maximum(gas_ttf, 15)  # Floor at 15 EUR/MWh
+        
+        # API2 Coal: ~80-120 USD/ton
+        coal_base = 100.0
+        coal_trend = np.linspace(0, -10, n_days)
+        coal_noise = np.random.normal(0, 5, n_days)
+        coal_api2 = coal_base + coal_trend + coal_noise
+        coal_api2 = np.maximum(coal_api2, 60)
+        
+        # CO2 EUA: ~60-90 EUR/ton with upward trend
+        co2_base = 75.0
+        co2_trend = np.linspace(0, 10, n_days)  # Carbon prices rising
+        co2_noise = np.random.normal(0, 2, n_days)
+        co2_eua = co2_base + co2_trend + co2_noise
+        co2_eua = np.maximum(co2_eua, 50)
+        
+        # Brent Oil: ~70-85 USD/barrel
+        oil_base = 78.0
+        oil_noise = np.random.normal(0, 3, n_days)
+        oil_brent = oil_base + oil_noise
+        oil_brent = np.maximum(oil_brent, 60)
+        
+        df = pd.DataFrame({
+            'timestamp': dates,
+            'gas_ttf_eur_mwh': gas_ttf,
+            'coal_api2_usd_ton': coal_api2,
+            'co2_eua_eur_ton': co2_eua,
+            'oil_brent_usd_barrel': oil_brent
+        })
+        
+        # Calculate marginal costs for power generation
+        # Gas CCGT: ~0.55 ton CO2/MWh, efficiency ~55%
+        df['gas_marginal_cost_eur_mwh'] = df['gas_ttf_eur_mwh'] + (0.55 * df['co2_eua_eur_ton'])
+        
+        # Coal: ~0.95 ton CO2/MWh, efficiency ~38%, convert USD to EUR (assume 1.1 rate)
+        coal_eur_mwh = (df['coal_api2_usd_ton'] / 1.1) / 8.14  # 1 ton coal ≈ 8.14 MWh thermal
+        df['coal_marginal_cost_eur_mwh'] = (coal_eur_mwh / 0.38) + (0.95 * df['co2_eua_eur_ton'])
+        
+        # Spread between gas and coal (merit order indicator)
+        df['gas_coal_spread_eur_mwh'] = df['gas_marginal_cost_eur_mwh'] - df['coal_marginal_cost_eur_mwh']
+        
+        return df
+    
+    def load_fuel_prices_from_csv(
+        self,
+        csv_path: Union[str, Path],
+        date_column: str = 'date',
+        resample_to_hourly: bool = True
+    ) -> pd.DataFrame:
+        """
+        Load fuel prices from a CSV file (if you have real data).
+        
+        Parameters
+        ----------
+        csv_path : str or Path
+            Path to CSV file with fuel price data
+        date_column : str
+            Name of the date column
+        resample_to_hourly : bool
+            If True, resample daily data to hourly (forward fill)
+            
+        Returns
+        -------
+        pd.DataFrame
+            Fuel price data
+        """
+        df = pd.read_csv(csv_path, parse_dates=[date_column])
+        df = df.rename(columns={date_column: 'timestamp'})
+        df['timestamp'] = pd.to_datetime(df['timestamp'], utc=True)
+        
+        if resample_to_hourly:
+            # Resample daily fuel prices to hourly (forward fill)
+            df = df.set_index('timestamp').resample('H').ffill().reset_index()
+        
+        return df
+
+
 if __name__ == "__main__":
     # Test the loaders
     print("Testing data loaders...")
@@ -565,7 +773,7 @@ if __name__ == "__main__":
     df_prices = loader.load_day_ahead_prices(
         zone='DE-LU',
         start_date='2026-04-02',
-        end_date='2026-05-03',
+        end_date='2026-05-07',
         use_cache=False
     )
 
