@@ -15,6 +15,7 @@ sys.path.append(str(Path(__file__).parent))
 import pandas as pd
 import numpy as np
 from src.data.loaders import EnergyChartsLoader, WeatherDataLoader
+from src.data.fuel_loader import FuelPriceLoader
 from src.features.engineer import FeatureEngineer
 
 ZONES      = ['DE-LU', 'ES']
@@ -23,6 +24,13 @@ END_DATE   = '2026-05-06'
 
 energy_loader  = EnergyChartsLoader(cache_dir='data/raw')
 weather_loader = WeatherDataLoader(cache_dir='data/external')
+fuel_loader    = FuelPriceLoader(cache_dir='data/external')
+
+print("\n[0/4] Downloading fuel prices (TTF gas, EUA carbon, Brent)...")
+fuel_hourly = fuel_loader.load_fuel_prices(START_DATE, END_DATE, use_cache=True, resample_to_hourly=True)
+fuel_hourly['timestamp'] = pd.to_datetime(fuel_hourly['timestamp'], utc=True)
+fuel_hourly = fuel_hourly.sort_values('timestamp').drop_duplicates('timestamp').reset_index(drop=True)
+print(f"      {len(fuel_hourly):,} hourly fuel price rows | cols: {[c for c in fuel_hourly.columns if c != 'timestamp']}")
 
 Path('data/processed').mkdir(parents=True, exist_ok=True)
 Path('data/engineered').mkdir(parents=True, exist_ok=True)
@@ -58,8 +66,12 @@ for zone in ZONES:
 
     # ── 2. Merge ─────────────────────────────────────────────────────────────
     print("\n[4/4] Merging and engineering features...")
-    merged = prices.merge(gen,     on='timestamp', how='inner')
-    merged = merged.merge(weather, on='timestamp', how='left')
+    merged = prices.merge(gen,        on='timestamp', how='inner')
+    merged = merged.merge(weather,    on='timestamp', how='left')
+    merged = merged.merge(fuel_hourly, on='timestamp', how='left')
+    # Forward-fill fuel prices over any hourly gaps (weekends/holidays have no new price)
+    fuel_cols = [c for c in fuel_hourly.columns if c != 'timestamp']
+    merged[fuel_cols] = merged[fuel_cols].ffill().bfill()
     merged = merged.sort_values('timestamp').reset_index(drop=True)
     print(f"      Merged: {len(merged):,} rows, {len(merged.columns)} columns")
 

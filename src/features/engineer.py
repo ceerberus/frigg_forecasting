@@ -104,7 +104,10 @@ class FeatureEngineer:
         
         # 6. Cyclical Encoding (for hour, day, month)
         df = self._add_cyclical_features(df)
-        
+
+        # 7. Fuel price features (gas, carbon, marginal costs)
+        df = self._add_fuel_price_features(df)
+
         print(f"✅ Created {len([c for c in df.columns if c != 'timestamp'])} features")
         
         return df
@@ -272,6 +275,38 @@ class FeatureEngineer:
         
         return df
     
+    def _add_fuel_price_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Add lag and rolling features for fuel/carbon prices."""
+        print("  → Fuel price features...")
+
+        FUEL_COLS = [
+            'gas_ttf_eur_mwh',
+            'co2_eua_eur_ton',
+            'oil_brent_usd_barrel',
+            'gas_marginal_cost_eur_mwh',
+            'coal_marginal_cost_eur_mwh',
+            'gas_coal_spread_eur_mwh',
+        ]
+
+        for col in FUEL_COLS:
+            if col not in df.columns:
+                continue
+            # Lags: 24h (yesterday), 168h (last week), 720h (~last month)
+            for lag in [24, 168, 720]:
+                df[f'{col}_lag_{lag}h'] = df[col].shift(lag)
+            # Rolling means: 7-day and 30-day
+            df[f'{col}_roll_7d']  = df[col].rolling(168,  min_periods=1).mean()
+            df[f'{col}_roll_30d'] = df[col].rolling(720,  min_periods=1).mean()
+            # Rate of change vs yesterday
+            df[f'{col}_chg_24h']  = df[col].pct_change(24)
+
+        # Spark spread: electricity price minus gas marginal cost
+        # (reveals how much renewables/nuclear are suppressing prices)
+        if 'price_eur_mwh' in df.columns and 'gas_marginal_cost_eur_mwh' in df.columns:
+            df['spark_spread'] = df['price_eur_mwh'] - df['gas_marginal_cost_eur_mwh']
+
+        return df
+
     # ========================================================================
     # Utility Methods
     # ========================================================================
