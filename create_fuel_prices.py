@@ -76,7 +76,7 @@ anchors = pd.DataFrame({
 }).set_index("timestamp")
 
 # Daily index covering the full training + prediction window
-daily_idx = pd.date_range("2024-01-01", "2026-05-12", freq="D", tz="UTC")
+daily_idx = pd.date_range("2024-01-01", "2026-05-15", freq="D", tz="UTC")
 df = anchors.reindex(daily_idx).interpolate(method="time").reset_index()
 df.columns = ["timestamp", "gas_ttf_eur_mwh", "co2_eua_eur_ton", "oil_brent_usd_barrel"]
 
@@ -101,7 +101,7 @@ out_dir = Path("data/external")
 out_dir.mkdir(parents=True, exist_ok=True)
 
 # Overwrite the broken cache file so fuel_loader picks it up automatically
-cache_path = out_dir / "fuel_prices_20240101_20260506.csv"
+cache_path = out_dir / "fuel_prices_20240101_20260508.csv"
 df.to_csv(cache_path, index=False)
 
 print(f"✅ Saved {len(df):,} daily rows  →  {cache_path}")

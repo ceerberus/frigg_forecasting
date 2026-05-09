@@ -86,7 +86,10 @@ class FeatureEngineer:
         df = df.sort_values('timestamp').reset_index(drop=True)
         
         print(f"🔧 Engineering features for {self.zone}...")
-        
+
+        # 0. Derive base aggregates before lag/rolling steps
+        df = self._derive_base_columns(df)
+
         # 1. Temporal Features
         df = self._add_temporal_features(df)
         
@@ -108,6 +111,12 @@ class FeatureEngineer:
         # 7. Fuel price features (gas, carbon, marginal costs)
         df = self._add_fuel_price_features(df)
 
+        # 8. ENTSO-E features (cross-border flows, nuclear, hydro, pumped storage, forecasts)
+        df = self._add_entsoe_features(df)
+
+        # 9. Neighbor country features (French nuclear, Portuguese hydro, etc.)
+        df = self._add_neighbor_features(df)
+
         print(f"✅ Created {len([c for c in df.columns if c != 'timestamp'])} features")
         
         return df
@@ -120,6 +129,36 @@ class FeatureEngineer:
     # Feature Creation Methods
     # ========================================================================
     
+    def _derive_base_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Derive aggregate columns that must exist before lag/rolling steps.
+        Called first so total_load_mw, total_renewable_mw, residual_load_mw
+        are available when _add_lag_features runs.
+        """
+        # total_renewable_mw — prefer ENTSO-E actuals, fall back to Energy-Charts cols
+        if "total_renewable_mw" not in df.columns:
+            ren_candidates = [
+                "wind_onshore_entsoe_mw", "wind_offshore_entsoe_mw", "solar_entsoe_mw",
+                "wind_onshore", "wind_offshore", "solar",
+            ]
+            ren_cols = [c for c in ren_candidates if c in df.columns]
+            if ren_cols:
+                df["total_renewable_mw"] = df[ren_cols].clip(lower=0).sum(axis=1)
+
+        # residual_load_mw = total_load_mw - renewables (key merit-order price driver)
+        if "residual_load_mw" not in df.columns and "total_load_mw" in df.columns:
+            ren = df["total_renewable_mw"] if "total_renewable_mw" in df.columns else 0
+            df["residual_load_mw"] = df["total_load_mw"] - ren
+
+        # renewable_share_pct
+        if "renewable_share_pct" not in df.columns and "total_renewable_mw" in df.columns \
+                and "total_load_mw" in df.columns:
+            df["renewable_share_pct"] = (
+                df["total_renewable_mw"] / (df["total_load_mw"] + 1e-6) * 100
+            ).clip(0, 200)
+
+        return df
+
     def _add_temporal_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add time-based features."""
         print("  → Temporal features...")
@@ -181,13 +220,13 @@ class FeatureEngineer:
         """Add rolling window statistics."""
         print("  → Rolling statistics...")
         
-        # Price rolling stats
+        # Price rolling stats over past window (includes lag-1 price, not current)
         if 'price_eur_mwh' in df.columns:
-            for window in [6, 12, 24, 168]:  # 6h, 12h, 24h, 1week
+            for window in [6, 12, 24, 168]:
                 df[f'price_rolling_mean_{window}h'] = df['price_eur_mwh'].rolling(window, min_periods=1).mean()
-                df[f'price_rolling_std_{window}h'] = df['price_eur_mwh'].rolling(window, min_periods=1).std()
-                df[f'price_rolling_min_{window}h'] = df['price_eur_mwh'].rolling(window, min_periods=1).min()
-                df[f'price_rolling_max_{window}h'] = df['price_eur_mwh'].rolling(window, min_periods=1).max()
+                df[f'price_rolling_std_{window}h']  = df['price_eur_mwh'].rolling(window, min_periods=1).std()
+                df[f'price_rolling_min_{window}h']  = df['price_eur_mwh'].rolling(window, min_periods=1).min()
+                df[f'price_rolling_max_{window}h']  = df['price_eur_mwh'].rolling(window, min_periods=1).max()
         
         # Load rolling stats
         if 'total_load_mw' in df.columns:
@@ -205,12 +244,12 @@ class FeatureEngineer:
         """Add rate-of-change features."""
         print("  → Differential features...")
         
-        # Price changes
+        # Price momentum — shift(1) so diff uses price(t-1)-price(t-2), not price(t)
         if 'price_eur_mwh' in df.columns:
-            df['price_diff_1h'] = df['price_eur_mwh'].diff(1)
-            df['price_diff_24h'] = df['price_eur_mwh'].diff(24)
-            df['price_pct_change_1h'] = df['price_eur_mwh'].pct_change(1)
-            df['price_pct_change_24h'] = df['price_eur_mwh'].pct_change(24)
+            df['price_diff_1h']       = df['price_eur_mwh'].diff(1).shift(1)
+            df['price_diff_24h']      = df['price_eur_mwh'].diff(24).shift(24)
+            df['price_pct_change_1h'] = df['price_eur_mwh'].pct_change(1).shift(1)
+            df['price_pct_change_24h']= df['price_eur_mwh'].pct_change(24).shift(24)
         
         # Load changes
         if 'total_load_mw' in df.columns:
@@ -300,10 +339,173 @@ class FeatureEngineer:
             # Rate of change vs yesterday
             df[f'{col}_chg_24h']  = df[col].pct_change(24)
 
-        # Spark spread: electricity price minus gas marginal cost
-        # (reveals how much renewables/nuclear are suppressing prices)
+        # Spark spread lagged — yesterday's spread tells us the market regime.
+        # Current spread (price(t) - cost(t)) would be pure target leakage.
         if 'price_eur_mwh' in df.columns and 'gas_marginal_cost_eur_mwh' in df.columns:
-            df['spark_spread'] = df['price_eur_mwh'] - df['gas_marginal_cost_eur_mwh']
+            spread = df['price_eur_mwh'] - df['gas_marginal_cost_eur_mwh']
+            df['spark_spread_lag_24h']  = spread.shift(24)
+            df['spark_spread_lag_168h'] = spread.shift(168)
+
+        return df
+
+    def _add_neighbor_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Add lag/rolling features for neighbor-country generation columns.
+
+        For DE-LU: French nuclear (fr_nuclear_mw) is the single most impactful
+        external variable — high French nuclear → surplus exports → DE prices fall.
+
+        For ES: Portuguese hydro (pt_hydro_mw) affects Iberian supply balance.
+        French nuclear (fr_nuclear_mw) affects ES via FR→ES interconnector.
+        """
+        print("  → Neighbor country features...")
+
+        # ── French nuclear ──────────────────────────────────────────────────
+        if "fr_nuclear" in df.columns:
+            # The column may come in as 'fr_nuclear' or 'fr_nuclear_mw'
+            col = "fr_nuclear"
+        elif "fr_nuclear_mw" in df.columns:
+            col = "fr_nuclear_mw"
+        else:
+            col = None
+
+        if col:
+            for lag in [1, 24, 168]:
+                df[f"fr_nuclear_lag_{lag}h"] = df[col].shift(lag)
+            df["fr_nuclear_roll_24h"]  = df[col].rolling(24,  min_periods=1).mean()
+            df["fr_nuclear_roll_168h"] = df[col].rolling(168, min_periods=1).mean()
+            df["fr_nuclear_diff_24h"]  = df[col].diff(24)
+
+        # ── French hydro ─────────────────────────────────────────────────────
+        fr_hydro_cols = [c for c in df.columns
+                         if c.startswith("fr_hydro") or c.startswith("fr_hydro_water")]
+        if fr_hydro_cols:
+            df["fr_hydro_mw"] = df[fr_hydro_cols].sum(axis=1)
+            for lag in [24, 168]:
+                df[f"fr_hydro_lag_{lag}h"] = df["fr_hydro_mw"].shift(lag)
+
+        # ── Portuguese hydro (ES-relevant) ───────────────────────────────────
+        pt_hydro_cols = [c for c in df.columns
+                         if c.startswith("pt_hydro") or c.startswith("pt_hydro_water")]
+        if pt_hydro_cols:
+            df["pt_hydro_mw"] = df[pt_hydro_cols].sum(axis=1)
+            for lag in [1, 24, 168]:
+                df[f"pt_hydro_lag_{lag}h"] = df["pt_hydro_mw"].shift(lag)
+            df["pt_hydro_roll_168h"] = df["pt_hydro_mw"].rolling(168, min_periods=1).mean()
+
+        # ── French gas (marginal cost signal) ────────────────────────────────
+        fr_gas_col = next((c for c in df.columns if "fr_fossil_gas" in c), None)
+        if fr_gas_col:
+            df["fr_gas_lag_24h"] = df[fr_gas_col].shift(24)
+
+        # ── Combined neighbor low-carbon proxy ───────────────────────────────
+        # When FR nuclear + hydro is high, it exports cheap power → suppresses DE-LU/ES prices
+        low_c_neighbor = [c for c in df.columns
+                          if any(x in c for x in ["fr_nuclear", "fr_hydro", "pt_hydro"])
+                          and "lag" not in c and "roll" not in c and "diff" not in c]
+        if low_c_neighbor:
+            df["neighbor_low_carbon_mw"] = df[low_c_neighbor].sum(axis=1)
+            df["neighbor_low_carbon_lag_24h"] = df["neighbor_low_carbon_mw"].shift(24)
+
+        # ── RTE D-1 nuclear forecast ──────────────────────────────────────────
+        # The day-ahead nuclear forecast published by RTE at noon D-1.
+        # Unlike the actual generation lags, this is genuinely available at
+        # inference time for the next day — no train/inference mismatch.
+        if "fr_nuclear_forecast_mw" in df.columns:
+            fc = df["fr_nuclear_forecast_mw"]
+            df["fr_nuclear_forecast_lag_24h"]  = fc.shift(24)
+            df["fr_nuclear_forecast_roll_24h"] = fc.rolling(24,  min_periods=1).mean()
+            # Forecast error vs actual (only meaningful in training — zero at inference)
+            if col:  # col = actual fr_nuclear column defined above
+                df["fr_nuclear_forecast_error"] = df[col] - fc
+                df["fr_nuclear_forecast_err_24h"] = df["fr_nuclear_forecast_error"].shift(24)
+
+        return df
+
+    def _add_entsoe_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Add lag/rolling features for ENTSO-E cross-border flows and generation mix."""
+        print("  → ENTSO-E features...")
+
+        # ── Cross-border flows ───────────────────────────────────────────────
+        # French imports are the single most impactful external driver for DE-LU:
+        # high FR nuclear → large FR→DE exports → suppresses German prices
+        flow_cols = [c for c in df.columns if c.startswith("net_import_") and c != "net_import_total_mw"]
+        for col in flow_cols + ["net_import_total_mw"]:
+            if col not in df.columns:
+                continue
+            for lag in [1, 24, 168]:
+                df[f"{col}_lag_{lag}h"] = df[col].shift(lag)
+            df[f"{col}_roll_24h"] = df[col].rolling(24, min_periods=1).mean()
+
+        # ── Nuclear generation ───────────────────────────────────────────────
+        if "nuclear_mw" in df.columns:
+            for lag in [1, 24, 168]:
+                df[f"nuclear_lag_{lag}h"] = df["nuclear_mw"].shift(lag)
+            df["nuclear_roll_24h"]  = df["nuclear_mw"].rolling(24,  min_periods=1).mean()
+            df["nuclear_roll_168h"] = df["nuclear_mw"].rolling(168, min_periods=1).mean()
+
+        # ── Pumped storage net (market equilibrium signal) ───────────────────
+        # Positive = generating (high price expected)
+        # Negative = pumping (low / negative price expected)
+        if "pumped_storage_net_mw" in df.columns:
+            for lag in [1, 24]:
+                df[f"pumped_net_lag_{lag}h"] = df["pumped_storage_net_mw"].shift(lag)
+            df["pumped_net_roll_24h"] = df["pumped_storage_net_mw"].rolling(24, min_periods=1).mean()
+            df["is_pumping"] = (df["pumped_storage_net_mw"] < 0).astype(int)
+
+        # ── Hydro (key price driver for ES) ─────────────────────────────────
+        if "hydro_total_mw" in df.columns:
+            for lag in [1, 24, 168]:
+                df[f"hydro_lag_{lag}h"] = df["hydro_total_mw"].shift(lag)
+            df["hydro_roll_24h"]  = df["hydro_total_mw"].rolling(24,  min_periods=1).mean()
+            df["hydro_roll_168h"] = df["hydro_total_mw"].rolling(168, min_periods=1).mean()
+            df["hydro_diff_24h"]  = df["hydro_total_mw"].diff(24)
+
+        # ── Fossil mix ───────────────────────────────────────────────────────
+        if "fossil_mix_mw" in df.columns:
+            for lag in [1, 24]:
+                df[f"fossil_mix_lag_{lag}h"] = df["fossil_mix_mw"].shift(lag)
+
+        # ── Day-ahead generation forecast (forward-looking market signal) ────
+        for col in ["wind_forecast_mw", "solar_forecast_mw", "renewable_forecast_total_mw"]:
+            if col not in df.columns:
+                continue
+            for lag in [24, 168]:
+                df[f"{col}_lag_{lag}h"] = df[col].shift(lag)
+            df[f"{col}_roll_24h"] = df[col].rolling(24, min_periods=1).mean()
+
+        # Forecast vs actual (surprise = when renewables exceed/miss forecast)
+        if "wind_forecast_mw" in df.columns and "wind_onshore_entsoe_mw" in df.columns:
+            df["wind_forecast_error"] = (
+                df["wind_onshore_entsoe_mw"] - df["wind_forecast_mw"]
+            )
+        if "solar_forecast_mw" in df.columns and "solar_entsoe_mw" in df.columns:
+            df["solar_forecast_error"] = (
+                df["solar_entsoe_mw"] - df["solar_forecast_mw"]
+            )
+
+        # ── Day-ahead load forecast (forward-looking demand signal) ─────────
+        # Published D-1 by TSOs — available at inference time, no leakage.
+        if "load_forecast_mw" in df.columns:
+            for lag in [24, 168]:
+                df[f"load_forecast_lag_{lag}h"] = df["load_forecast_mw"].shift(lag)
+            df["load_forecast_roll_24h"] = df["load_forecast_mw"].rolling(24, min_periods=1).mean()
+
+        # ── Low-carbon share (from ENTSO-E generation mix) ──────────────────
+        low_c_cols = [c for c in ["nuclear_mw", "hydro_total_mw",
+                                   "wind_onshore_entsoe_mw", "wind_offshore_entsoe_mw",
+                                   "solar_entsoe_mw", "biomass_mw", "other_renewable_mw"]
+                      if c in df.columns]
+        all_gen_cols = [c for c in df.columns
+                        if c.endswith("_mw") and not c.startswith("net_import")
+                        and not c.startswith("pumped_storage_net")
+                        and not c.startswith("wind_forecast")
+                        and not c.startswith("solar_forecast")
+                        and not c.startswith("renewable_forecast")]
+        if low_c_cols and all_gen_cols:
+            low_c = df[low_c_cols].clip(lower=0).sum(axis=1)
+            total = df[all_gen_cols].clip(lower=0).sum(axis=1)
+            df["low_carbon_share_entsoe"] = low_c / (total + 1e-6)
 
         return df
 

@@ -87,3 +87,8 @@ htmlcov/
 # Temporary files
 *.tmp
 *.bak
+
+outputs/models/2026-05-06-1750/
+outputs/models/20260507-2252/
+outputs/models/ensemble/
+outputs/models/*.txt
