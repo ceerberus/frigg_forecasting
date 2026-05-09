@@ -546,7 +546,7 @@
       <div class="meta reveal">
         <span class="pill sky">Pinball Loss · q 0.45</span>
         <span class="pill violet">95% Coverage</span>
-        <span class="pill"><span class="n">169</span>&nbsp; Features</span>
+        <span class="pill"><span class="n">150</span>&nbsp; Features</span>
         <span class="pill"><span class="n">3</span>&nbsp; GBM Ensemble</span>
       </div>
     </div>
@@ -648,10 +648,10 @@
         </div>
         <div class="zone-map" aria-hidden="true">
           <svg viewBox="0 0 200 200">
-            <!-- Stylised Germany silhouette + Luxembourg dot -->
-            <path class="country" d="M82 22 L96 18 L108 22 L118 30 L130 28 L138 38 L148 42 L150 56 L162 64 L168 78 L160 92 L168 104 L172 120 L160 134 L150 138 L148 152 L140 160 L130 168 L120 174 L108 176 L96 172 L84 170 L74 162 L64 154 L58 142 L52 130 L46 118 L40 108 L36 96 L32 86 L36 74 L42 64 L52 52 L60 42 L70 32 Z"/>
-            <circle class="lux" cx="56" cy="118" r="3.5"/>
-            <circle class="pin" cx="100" cy="80" r="4">
+            <!-- Germany silhouette: N coast, Polish border, Czech/Austrian Alps, Rhine valley -->
+            <path class="country" d="M80 24 L96 28 L118 38 L134 38 L148 44 L152 58 L152 80 L162 100 L148 112 L132 114 L128 128 L132 144 L122 156 L106 166 L90 163 L80 163 L60 163 L58 150 L62 138 L60 124 L56 110 L48 104 L40 100 L38 88 L42 72 L54 58 L70 50 L80 44 Z"/>
+            <circle class="lux" cx="52" cy="120" r="3.5"/>
+            <circle class="pin" cx="100" cy="90" r="4">
               <animate attributeName="r" values="4;7;4" dur="2.6s" repeatCount="indefinite"/>
               <animate attributeName="opacity" values="1;.3;1" dur="2.6s" repeatCount="indefinite"/>
             </circle>
@@ -670,9 +670,9 @@
         </div>
         <div class="zone-map" aria-hidden="true">
           <svg viewBox="0 0 200 200">
-            <!-- Stylised Iberian peninsula silhouette (Spain + Portugal hint) -->
-            <path class="country" d="M40 70 L52 56 L70 50 L92 48 L116 50 L138 52 L158 58 L168 70 L172 86 L170 100 L164 116 L156 130 L140 142 L120 150 L100 154 L80 152 L62 144 L48 132 L38 116 L32 100 L30 86 Z"/>
-            <circle class="pin" cx="110" cy="100" r="4">
+            <!-- Iberian Peninsula: N Pyrenees coast, Mediterranean, Gibraltar, Atlantic, Galicia -->
+            <path class="country" d="M38 30 L72 28 L112 36 L168 54 L162 80 L130 110 L110 164 L88 174 L68 174 L42 164 L30 156 L28 126 L30 90 L34 68 Z"/>
+            <circle class="pin" cx="92" cy="94" r="4">
               <animate attributeName="r" values="4;7;4" dur="2.6s" repeatCount="indefinite"/>
               <animate attributeName="opacity" values="1;.3;1" dur="2.6s" repeatCount="indefinite"/>
             </circle>
@@ -707,9 +707,9 @@
         <div class="meta">TTF · EUA · Brent</div>
       </div>
       <div class="src reveal">
-        <div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="2"/><ellipse cx="12" cy="12" rx="9" ry="3"/><ellipse cx="12" cy="12" rx="9" ry="3" transform="rotate(60 12 12)"/><ellipse cx="12" cy="12" rx="9" ry="3" transform="rotate(120 12 12)"/></svg></div>
-        <h5>FR Nuclear</h5>
-        <div class="meta">Cross-border proxy</div>
+        <div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/><path d="M7 8h2v4H7zM15 8h2v4h-2zM11 10h2v2h-2z"/></svg></div>
+        <h5>ENTSO-E Transparency</h5>
+        <div class="meta">Load forecast · wind &amp; solar D&#8209;1</div>
       </div>
     </div>
   </div>
@@ -719,14 +719,15 @@
 <section id="features">
   <div class="container">
     <div class="eyebrow reveal">Feature engineering</div>
-    <h2 class="h-2 reveal"><em>169 features</em>, two clear winners.</h2>
-    <p class="lede reveal">Spark spread + short-horizon price lags do most of the work in both zones.</p>
+    <h2 class="h-2 reveal"><em>150 features</em>, two clear winners.</h2>
+    <p class="lede reveal">Spark spread lags + short-horizon price lags do most of the work &mdash; with ENTSO-E D&#8209;1 load &amp; renewable signals providing the broader system picture.</p>
 
     <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:32px;">
-      <span class="pill"><span class="n">169</span>&nbsp; total features</span>
+      <span class="pill"><span class="n">150</span>&nbsp; total features</span>
       <span class="pill sky">Price lags · 1h → 504h</span>
       <span class="pill sky">Rolling stats · 24h / 7d</span>
       <span class="pill violet">Marginal cost proxies</span>
+      <span class="pill violet">ENTSO-E D&#8209;1 signals</span>
       <span class="pill violet">Cyclical calendar</span>
     </div>
 
@@ -774,7 +775,7 @@
     <p class="lede reveal">Each model trains independent quantile heads. The simple average is then post-hoc calibrated to a 95% prediction interval.</p>
 
     <div class="flow reveal">
-      <div class="flow-stage">Training Data · 2022 — 2026</div>
+      <div class="flow-stage">Training Data · 2024 — 2026</div>
       <div class="arrow-down"></div>
       <div class="flow-row">
         <div class="model-card"><div class="mc-name">LightGBM</div><div class="mc-tag">quantile</div></div>
@@ -823,10 +824,10 @@
         <div class="resolve"><b>Fix</b>Backfill from monthly averages + interpolation.</div>
       </div>
       <div class="diff-card reveal">
-        <div class="ico-wrap"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><path d="M9 6h6a3 3 0 013 3v6"/><path d="M4 4l16 16"/></svg></div>
-        <h4>Neighbour features backfired</h4>
-        <p>FR/PT generation added 25 columns; validation got <b style="color:#fca5a5;">worse</b> from timing misalignment.</p>
-        <div class="resolve"><b>Fix</b>Removed; kept a coarser nuclear proxy.</div>
+        <div class="ico-wrap"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 2a10 10 0 100 20 10 10 0 000-20z"/><path d="M12 8v4l3 3"/><path d="M9.09 3.27A7 7 0 012 12M21.73 9A9 9 0 0112 21"/></svg></div>
+        <h4>Spark spread leakage</h4>
+        <p><code style="font-family:'JetBrains Mono',monospace;color:#fbbf24;background:rgba(251,191,36,.1);padding:1px 6px;border-radius:3px;font-size:13px;">spark_spread = price &minus; gas_cost</code> contains the target at training time &mdash; a subtle look-ahead.</p>
+        <div class="resolve"><b>Fix</b>At inference, use the 7-day lag as a stale-but-valid proxy for weekly-seasonal patterns.</div>
       </div>
     </div>
   </div>
@@ -893,9 +894,9 @@
       <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/></svg>
     </div>
     <h2 class="h-2 reveal">
-      Real cross-border flow data from <em>ENTSO-E Transparency</em> &mdash;<br/>
-      actual import/export between DE-LU, France, Austria and Switzerland &mdash;<br/>
-      would replace the nuclear proxy with <em class="v">physical market constraints</em>.
+      ENTSO-E D&#8209;1 load forecasts and renewable generation signals are <em>live in the pipeline</em> &mdash;<br/>
+      the same API that the market makers watch.<br/>
+      Next: cross-border flow constraints to model <em class="v">congestion-driven price spikes</em>.
     </h2>
     <div class="divider"></div>
     <div class="repro reveal">
