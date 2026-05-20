@@ -4,7 +4,7 @@ Ensemble forecasting system for European day-ahead electricity prices (DE-LU and
 
 ## Evaluation Results — May 11 2026
 
-![Actual vs Predicted](outputs/forecasts/actual_vs_predicted.png)
+![Actual vs Predicted](outputs/plots/actual_vs_predicted.png)
 
 | Zone | Pinball Loss q=0.45 | MAE |
 |------|--------------------:|----:|
