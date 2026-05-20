@@ -22,4 +22,3 @@ __all__ = [
     'evaluate_forecast'
 ]
 
-# Made with Bob

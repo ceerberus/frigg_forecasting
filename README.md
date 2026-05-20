@@ -1,139 +1,106 @@
-# Electricity Price Forecasting Challenge
+# Electricity Price Forecasting — Frigg Hackathon 2026
 
-## Project Overview
-Multi-horizon ensemble forecasting system for European electricity markets (DE-LU and ES zones).
+Ensemble forecasting system for European day-ahead electricity prices (DE-LU and ES zones).
+
+## Evaluation Results — May 11 2026
+
+![Actual vs Predicted](outputs/forecasts/actual_vs_predicted.png)
+
+| Zone | Pinball Loss q=0.45 | MAE |
+|------|--------------------:|----:|
+| DE-LU | 14.75 EUR/MWh | 28.52 |
+| ES | 13.28 EUR/MWh | 24.85 |
+
+### Why the model underperformed
+
+**1. Spark spread leakage during training.**
+The most important feature (`spark_spread`, ~38–52% gain) was defined as
+`price(t) − gas_cost(t)` — meaning the training target was embedded directly in the
+feature. The model achieved low validation loss partly because it could reconstruct
+the price from itself. At true inference time, the current price is unknown, so a
+stale 7-day-old proxy was substituted. The model relied heavily on a signal it could
+never actually observe.
+
+**2. One-day data gap.**
+Predictions were submitted on May 9; the evaluation window is May 11. All
+short-horizon lag features (`price_lag_1h` … `price_lag_48h`) that would normally
+carry yesterday's market state were unavailable. They were filled from a reference
+row 7 days prior, effectively making `lag_24h ≈ lag_168h` and blinding the model to
+actual market conditions on May 10.
+
+**3. May 11 was atypical.**
+The model learned to predict a large evening spike in DE-LU (from gas-driven peak
+hours in the training data) and a deep solar trough in ES (duck-curve pattern). On
+May 11 neither materialised: DE-LU prices stayed flat around 100–130 EUR/MWh and ES
+prices remained elevated through midday. Models that had memorised these patterns
+were penalised heavily.
+
+**4. Validation scores were misleading.**
+In-sample validation used actual spark_spread values, so the reported scores
+(DE-LU 4.10 / ES 0.20) significantly overstated real-world performance. The jump
+to 14.75 / 13.28 on the live evaluation reflects the combination of leakage, the
+data gap, and distribution shift — not a sudden drop in model quality.
 
 ## Project Structure
+
 ```
-frigg_hack/
-├── data/                          # Raw and processed data
-│   ├── raw/                       # Original downloaded data
-│   │   ├── delu/                  # DE-LU zone data
-│   │   └── es/                    # ES zone data
-│   ├── processed/                 # Cleaned and preprocessed data
-│   └── external/                  # External data sources (weather, fuel prices)
-├── notebooks/                     # Jupyter notebooks
+frigg_forecasting/
+├── data/
+│   ├── raw/                        # Historical DAA prices & generation per zone
+│   ├── processed/                  # Merged datasets with initial features
+│   ├── engineered/                 # Final feature matrices for training
+│   └── external/                   # Weather, fuel prices, ENTSO-E, neighbor gen
+├── notebooks/
 │   ├── 01_data_acquisition.ipynb
-│   ├── 02_eda_analysis.ipynb
+│   ├── 02_exploratory_data_analysis.ipynb
 │   ├── 03_feature_engineering.ipynb
 │   ├── 04_model_development.ipynb
-│   └── final_submission.ipynb     # Main submission notebook
-├── src/                           # Source code modules
-│   ├── __init__.py
-│   ├── data/                      # Data loading and preprocessing
-│   │   ├── __init__.py
-│   │   ├── loaders.py
-│   │   └── preprocessors.py
-│   ├── features/                  # Feature engineering
-│   │   ├── __init__.py
-│   │   ├── temporal.py
-│   │   ├── weather.py
-│   │   └── market.py
-│   ├── models/                    # Model implementations
-│   │   ├── __init__.py
-│   │   ├── short_term.py
-│   │   ├── medium_term.py
-│   │   ├── long_term.py
-│   │   └── ensemble.py
-│   ├── evaluation/                # Evaluation metrics
-│   │   ├── __init__.py
-│   │   └── metrics.py
-│   └── utils/                     # Utility functions
-│       ├── __init__.py
-│       └── helpers.py
-├── models/                        # Saved model artifacts
-│   ├── delu/
-│   └── es/
-├── outputs/                       # Predictions and visualizations
-│   └── predictions.csv
-├── requirements.txt               # Python dependencies
-├── environment.yml                # Conda environment (optional)
-└── README.md                      # This file
+│   └── heal_the_grid_model.ipynb   # Main submission notebook
+├── src/
+│   ├── data/                       # Data loaders (ENTSO-E, fuel, neighbors, RTE)
+│   ├── features/                   
+│   └── evaluation/                 
+├── outputs/
+│   ├── models/                     # Saved CatBoost / LightGBM / XGBoost artifacts
+│   ├── forecasts/                  
+│   └── plots/                      
+├── submission/                     # Final submission package
+│   ├── heal_the_grid_model.ipynb
+│   ├── heal_the_grid_predictions.csv
+│   └── heal_the_grid_data.zip
+├── pitch_website/
+├── prepare_full_dataset.py
+├── create_fuel_prices.py           # Synthetic fuel prices
+├── create_submission_package.py
+└── requirements.txt
 ```
 
-## Development Timeline (4 Days)
+## Models
 
-### Day 1: Infrastructure & Data
-- [x] Project setup
-- [ ] Data acquisition pipeline
-- [ ] Initial EDA
-
-### Day 2: Feature Engineering & Short-term Models
-- [ ] Feature engineering pipeline
-- [ ] Short-term model development
-- [ ] Quantile regression implementation
-
-### Day 3: Medium/Long-term & Ensemble
-- [ ] Medium/long-term models
-- [ ] Horizon-aware routing
-- [ ] Cross-zone analysis
-
-### Day 4: Optimization & Submission
-- [ ] Fine-tuning for pinball loss
-- [ ] Generate predictions
-- [ ] Final notebook and documentation
-
-## Key Features
-
-### Model Architecture
-- **Short-term (0-7 days)**: Temporal Transformer + XGBoost + LSTM ensemble
-- **Medium-term (7 days - 3 months)**: Prophet + Seasonal decomposition
-- **Long-term (3+ months)**: Trend extrapolation + Historical volatility
-
-### Feature Categories
-1. **Temporal**: Hour, day, week, month, holidays, seasonal cycles
-2. **Weather**: Wind speed, solar irradiance, temperature
-3. **Market**: Price lags, volatility, generation mix
-4. **Fuel**: Gas, coal, carbon prices
-5. **Interconnection**: Cross-border flows (DE-LU specific)
-
-### Zone-Specific Considerations
-- **DE-LU**: High wind variability, frequent negative prices, strong interconnections
-- **ES**: High solar penetration, hydro flexibility, more isolated market
-
-## Installation
-
-```bash
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
-```
-
-## Usage
-
-```python
-from src.models.ensemble import EnsembleForecaster
-
-# Initialize forecaster
-forecaster = EnsembleForecaster(zone='DE-LU')
-
-# Make predictions
-predictions = forecaster.predict(
-    start='2026-05-08T18:00:00+01:00',
-    end='2026-05-09T23:00:00+01:00'
-)
-```
+Quantile ensemble of CatBoost, LightGBM, and XGBoost trained per zone (DE-LU, ES) at quantiles **p025, p45, p50, p975**.
 
 ## Evaluation Metric
 
 Asymmetric pinball loss at q=0.45:
+
 ```python
 def scoring_loss(y_true, y_pred, q=0.45):
     r = np.asarray(y_true, float) - np.asarray(y_pred, float)
     return float(np.mean(np.where(r >= 0, q * r, (q - 1) * r)))
 ```
 
+## Setup
+
+```bash
+python -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt
+```
+
 ## Data Sources
-- Historical DAA prices: https://energy-charts.info/
-- Weather data: Open-Meteo API / ERA5 reanalysis
+
+- DAA prices: [energy-charts.info](https://energy-charts.info/)
+- Weather: Open-Meteo API
+- Generation forecasts & cross-border flows: ENTSO-E Transparency Platform
 - Fuel prices: ICE/EEX market data
-- Generation data: ENTSO-E Transparency Platform
-
-## Team
-Developed for the Frigg Hackathon 2026
-
-## License
-Non-commercial use only (Hackathon submission)
+- Neighbor generation (FR, PT): ENTSO-E
