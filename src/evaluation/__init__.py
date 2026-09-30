@@ -8,6 +8,8 @@ from .metrics import (
     mae,
     rmse,
     mape,
+    interval_score,
+    diebold_mariano,
     evaluate_forecast
 )
 
@@ -19,6 +21,8 @@ __all__ = [
     'mae',
     'rmse',
     'mape',
+    'interval_score',
+    'diebold_mariano',
     'evaluate_forecast'
 ]
 

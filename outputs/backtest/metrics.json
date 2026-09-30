@@ -1,0 +1,117 @@
+{
+  "evaluation_window": [
+    "2025-05-11",
+    "2026-05-10"
+  ],
+  "backtest": {
+    "DE-LU": {
+      "n_hours": 8758,
+      "n_days": 365,
+      "pinball_q45_model": 5.608726766770527,
+      "mae_model": 11.5019107380532,
+      "pinball_q45_naive_d1": 13.215399334893812,
+      "mae_naive_d1": 26.43865408769125,
+      "pinball_q45_naive_d7": 16.23176855446449,
+      "mae_naive_d7": 32.53360755880338,
+      "rmse_model": 20.440764683505567,
+      "best_naive": "naive_d1",
+      "skill_vs_best_naive_pct": 57.559157883626725,
+      "rmae_vs_naive_d7": 0.3535393582548105,
+      "dm_stat_vs_naive_d1": -12.82810930224821,
+      "dm_pvalue_vs_naive_d1": 5.705752813777016e-38,
+      "dm_stat_vs_naive_d7": -12.095420384529307,
+      "dm_pvalue_vs_naive_d7": 5.583458166610494e-34,
+      "coverage_95_raw": 0.800639415391642,
+      "mean_width_raw": 41.539037145362705,
+      "interval_score_raw": 113.56514754552937,
+      "coverage_95_cqr": 0.947248230189541,
+      "mean_width_cqr": 58.78038015850515,
+      "interval_score_cqr": 93.19800555178755,
+      "share_negative_price_hours": 0.07067823704042019,
+      "coverage_95_cqr_negative_hours": 0.9579967689822294
+    },
+    "ES": {
+      "n_hours": 8758,
+      "n_days": 365,
+      "pinball_q45_model": 4.689472488533694,
+      "mae_model": 9.38675104362061,
+      "pinball_q45_naive_d1": 9.117783633535055,
+      "mae_naive_d1": 18.238435287736927,
+      "pinball_q45_naive_d7": 13.205588026661339,
+      "mae_naive_d7": 26.49992592486869,
+      "rmse_model": 13.458436233306486,
+      "best_naive": "naive_d1",
+      "skill_vs_best_naive_pct": 48.56784634276807,
+      "rmae_vs_naive_d7": 0.3542180106553306,
+      "dm_stat_vs_naive_d1": -13.679218218660184,
+      "dm_pvalue_vs_naive_d1": 6.756889265053379e-43,
+      "dm_stat_vs_naive_d7": -9.814518974093492,
+      "dm_pvalue_vs_naive_d7": 4.875094437375365e-23,
+      "coverage_95_raw": 0.8592144325188399,
+      "mean_width_raw": 39.85221851323829,
+      "interval_score_raw": 72.24677625839695,
+      "coverage_95_cqr": 0.9538707467458324,
+      "mean_width_cqr": 51.89321370106064,
+      "interval_score_cqr": 65.17062918151244,
+      "share_negative_price_hours": 0.0876912537108929,
+      "coverage_95_cqr_negative_hours": 0.9973958333333334
+    }
+  },
+  "live_day_2026-05-11": {
+    "DE-LU": {
+      "pinball_q45_model": 6.760945798753824,
+      "pinball_q45_original_submission": 14.289610208333334,
+      "pinball_q45_naive_d1": 22.98643229166667,
+      "pinball_q45_naive_d7": 15.332041666666669,
+      "coverage_95_cqr": 0.9166666666666666,
+      "coverage_95_original_submission": 0.4583333333333333
+    },
+    "ES": {
+      "pinball_q45_model": 5.946471578422752,
+      "pinball_q45_original_submission": 12.152087291666668,
+      "pinball_q45_naive_d1": 16.140937500000003,
+      "pinball_q45_naive_d7": 11.953760416666668,
+      "coverage_95_cqr": 1.0,
+      "coverage_95_original_submission": 0.6666666666666666
+    },
+    "both_zones_avg": {
+      "pinball_q45_model": 6.353708688588288,
+      "pinball_q45_original_submission": 13.220848750000002,
+      "pinball_q45_naive_d1": 19.563684895833337,
+      "pinball_q45_naive_d7": 13.642901041666669,
+      "coverage_95_cqr": 0.9583333333333333,
+      "coverage_95_original_submission": 0.5625
+    }
+  },
+  "top_features_gain_share": {
+    "DE-LU": {
+      "residual_load_fc_mw": 0.1988,
+      "price_same_hour_ref": 0.0918,
+      "renewable_share_fc": 0.0733,
+      "residual_load_fc_delta_ref": 0.0504,
+      "price_ref_day_last": 0.0485,
+      "price_same_hour_d7": 0.0481,
+      "price_ref_std_7d": 0.0383,
+      "price_same_hour_ref_m1": 0.03,
+      "residual_load_fc_day_delta_ref": 0.0292,
+      "doy_cos": 0.0271
+    },
+    "ES": {
+      "price_same_hour_ref": 0.3807,
+      "residual_load_fc_mw": 0.1119,
+      "residual_load_fc_delta_ref": 0.0978,
+      "price_ref_day_last": 0.0944,
+      "residual_load_fc_day_delta_ref": 0.0344,
+      "price_same_hour_d7": 0.0291,
+      "renewable_share_fc": 0.023,
+      "price_ref_std_7d": 0.0179,
+      "price_ref_mean_7d": 0.0175,
+      "residual_load_fc_day_min": 0.0171
+    }
+  },
+  "quantiles": {
+    "p025": 0.025,
+    "p45": 0.45,
+    "p975": 0.975
+  }
+}

@@ -3,6 +3,55 @@
 ## Project Overview
 Multi-horizon ensemble forecasting system for European electricity markets (DE-LU and ES zones).
 
+## Day-ahead model (leakage-free)
+
+`python scripts/run_day_ahead.py` downloads the data, tunes, backtests and replays the live
+evaluation day. Results go to `outputs/backtest/metrics.json`.
+
+**Why it exists.** The hackathon pipeline (notebooks 03/04) had target leakage: `price_diff_1h`,
+`price_pct_change_*` and the rolling price windows included the price being predicted
+(`price_lag_1h + price_diff_1h` reproduced the target exactly), and short price lags and realised
+generation are not known at auction time. Validation scores were therefore meaningless, and at
+forecast time those features had to be filled with last week's values.
+
+**Method**
+- *Information set* (`src/features/day_ahead.py`): for delivery day D, prices only up to day D-1,
+  TSO day-ahead forecasts of load/solar/wind for D (Energy-Charts), calendar. One feature function
+  for training and inference; `tests/test_day_ahead_features.py` asserts that perturbing prices
+  from day D onwards leaves the features of day D unchanged.
+- *Model* (`src/models/quantile_lgbm.py`): LightGBM quantile regression per zone for
+  q = 0.025 / 0.45 / 0.975. The 0.45-quantile is the point forecast because it minimises expected
+  pinball loss at q = 0.45 (the challenge metric). Hyperparameters tuned with Optuna (TPE) on a
+  validation period (Nov 2024 – Feb 2025) that precedes the backtest.
+- *Evaluation*: expanding-window rolling-origin backtest, 365 delivery days (2025-05-11 – 2026-05-10),
+  every day forecast out-of-sample (refit every 14 days). Diebold-Mariano tests (HAC variance on
+  daily losses) against naive benchmarks (same hour D-1, same hour D-7).
+- *Intervals*: conformalized quantile regression (CQR), recalibrated daily on the previous 90 days
+  of out-of-sample conformity scores.
+
+**Backtest results (365 days, 8,758 hours per zone)**
+
+| | DE-LU | ES |
+|---|---|---|
+| Pinball loss q=0.45, model | 5.61 | 4.69 |
+| Pinball loss q=0.45, best naive (D-1) | 13.22 | 9.12 |
+| Improvement vs. best naive | 58% | 49% |
+| Diebold-Mariano p-value vs. best naive | < 1e-30 | < 1e-30 |
+| rMAE vs. naive D-7 | 0.35 | 0.35 |
+| 95% interval coverage, raw quantiles → CQR | 80.1% → 94.7% | 85.9% → 95.4% |
+| Interval (Winkler) score, raw → CQR | 113.6 → 93.2 | 72.2 → 65.2 |
+
+**Live day replay (2026-05-11, 24 h, both zones averaged)**: pinball loss 6.35 vs. 13.22 for the
+originally submitted (leaky) forecast and 13.64 for the best naive; CQR interval coverage 96% vs. 56%.
+Caveat: the TSO forecasts for 11 May were published on 10 May, i.e. after the challenge deadline, so
+the replay reflects the standard day-ahead information set rather than the challenge's.
+
+**Cross-zone differences** (gain share of the q=0.45 model): DE-LU is driven by fundamentals —
+residual-load forecast (20%) and renewable share (7%) lead, ahead of yesterday's price (9%).
+ES leans much more on price persistence — yesterday's same-hour price (38%) — with residual load
+second (11%), plausibly because the less interconnected Iberian market's price level is set
+by slower-moving drivers (hydro reservoirs, gas) that the features only capture through past prices.
+
 ## Project Structure
 ```
 frigg_hack/
