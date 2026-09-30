@@ -6,6 +6,11 @@ This module creates powerful features that capture:
 - Price dynamics (lags, rolling stats, volatility)
 - Supply-demand balance (renewable share, residual load)
 - Market interactions (generation mix, weather correlations)
+
+NOTE: superseded by `src/features/day_ahead.py`, which is used by `scripts/run_day_ahead.py`.
+Price-derived features here only use prices at least 24h old (the original version
+included the current price in diffs/rolling windows, i.e. target leakage). Realised
+generation/load columns are still contemporaneous and not known at auction time.
 """
 
 import pandas as pd
@@ -154,7 +159,7 @@ class FeatureEngineer:
         
         # Price lags (most important!)
         if 'price_eur_mwh' in df.columns:
-            for lag in [1, 2, 3, 6, 12, 24, 48, 168, 336, 504]:  # up to 3 weeks
+            for lag in [24, 48, 168, 336, 504]:  # >= 24h: unknown intra-day prices excluded
                 df[f'price_lag_{lag}h'] = df['price_eur_mwh'].shift(lag)
 
         # Load lags
@@ -178,13 +183,14 @@ class FeatureEngineer:
         """Add rolling window statistics."""
         print("  → Rolling statistics...")
         
-        # Price rolling stats
+        # Price rolling stats over the last known prices (window ends 24h before t)
         if 'price_eur_mwh' in df.columns:
+            known = df['price_eur_mwh'].shift(24)
             for window in [6, 12, 24, 168]:  # 6h, 12h, 24h, 1week
-                df[f'price_rolling_mean_{window}h'] = df['price_eur_mwh'].rolling(window, min_periods=1).mean()
-                df[f'price_rolling_std_{window}h'] = df['price_eur_mwh'].rolling(window, min_periods=1).std()
-                df[f'price_rolling_min_{window}h'] = df['price_eur_mwh'].rolling(window, min_periods=1).min()
-                df[f'price_rolling_max_{window}h'] = df['price_eur_mwh'].rolling(window, min_periods=1).max()
+                df[f'price_rolling_mean_{window}h'] = known.rolling(window, min_periods=1).mean()
+                df[f'price_rolling_std_{window}h'] = known.rolling(window, min_periods=1).std()
+                df[f'price_rolling_min_{window}h'] = known.rolling(window, min_periods=1).min()
+                df[f'price_rolling_max_{window}h'] = known.rolling(window, min_periods=1).max()
         
         # Load rolling stats
         if 'total_load_mw' in df.columns:
@@ -204,10 +210,11 @@ class FeatureEngineer:
         
         # Price changes
         if 'price_eur_mwh' in df.columns:
-            df['price_diff_1h'] = df['price_eur_mwh'].diff(1)
-            df['price_diff_24h'] = df['price_eur_mwh'].diff(24)
-            df['price_pct_change_1h'] = df['price_eur_mwh'].pct_change(1)
-            df['price_pct_change_24h'] = df['price_eur_mwh'].pct_change(24)
+            known = df['price_eur_mwh'].shift(24)  # never difference against the target itself
+            df['price_diff_1h'] = known.diff(1)
+            df['price_diff_24h'] = known.diff(24)
+            df['price_pct_change_1h'] = known.pct_change(1)
+            df['price_pct_change_24h'] = known.pct_change(24)
         
         # Load changes
         if 'total_load_mw' in df.columns:
