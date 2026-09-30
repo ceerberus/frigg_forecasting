@@ -1,0 +1,26 @@
+{
+  "DE-LU": {
+    "params": {
+      "learning_rate": 0.09194980786419338,
+      "num_leaves": 57,
+      "min_child_samples": 26,
+      "feature_fraction": 0.6672073013117824,
+      "bagging_fraction": 0.5728890150504499,
+      "lambda_l2": 0.006790623473791554
+    },
+    "num_boost_round": 325,
+    "valid_pinball_q45": 7.605016617906194
+  },
+  "ES": {
+    "params": {
+      "learning_rate": 0.07864606874954654,
+      "num_leaves": 13,
+      "min_child_samples": 26,
+      "feature_fraction": 0.8868890047718739,
+      "bagging_fraction": 0.8062945833288033,
+      "lambda_l2": 0.48836237046322845
+    },
+    "num_boost_round": 592,
+    "valid_pinball_q45": 6.672831751504672
+  }
+}
