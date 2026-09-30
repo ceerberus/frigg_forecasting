@@ -173,6 +173,53 @@ def mape(y_true: np.ndarray, y_pred: np.ndarray, epsilon: float = 1e-10) -> floa
     return float(np.mean(np.abs((y_true - y_pred) / (y_true + epsilon))) * 100)
 
 
+def interval_score(
+    y_true: np.ndarray,
+    lower: np.ndarray,
+    upper: np.ndarray,
+    alpha: float = 0.05
+) -> float:
+    """
+    Interval (Winkler) score of a central (1 - alpha) prediction interval (Gneiting & Raftery, 2007).
+
+    Width plus 2/alpha times the distance by which the observation falls outside the interval.
+    Proper scoring rule: rewards narrow intervals only if they keep their coverage. Lower is better.
+    """
+    y_true, lower, upper = (np.asarray(a, dtype=float) for a in (y_true, lower, upper))
+    penalty = (2 / alpha) * (np.maximum(lower - y_true, 0) + np.maximum(y_true - upper, 0))
+    return float(np.mean(upper - lower + penalty))
+
+
+def diebold_mariano(
+    loss_a: np.ndarray,
+    loss_b: np.ndarray,
+    max_lag: int = 7
+) -> Tuple[float, float]:
+    """
+    Diebold-Mariano test of equal predictive accuracy, H0: E[loss_a - loss_b] = 0.
+
+    Pass per-day losses (e.g. daily mean pinball loss) so that intra-day correlation is
+    absorbed; remaining serial correlation is handled with a Newey-West (Bartlett) HAC
+    variance using `max_lag` lags.
+
+    Returns
+    -------
+    (statistic, one-sided p-value for H1: model A is more accurate than model B)
+    """
+    from scipy import stats
+
+    d = np.asarray(loss_a, dtype=float) - np.asarray(loss_b, dtype=float)
+    d = d[~np.isnan(d)]
+    n = len(d)
+    d_c = d - d.mean()
+    long_run_var = np.dot(d_c, d_c) / n
+    for lag in range(1, max_lag + 1):
+        weight = 1 - lag / (max_lag + 1)
+        long_run_var += 2 * weight * np.dot(d_c[lag:], d_c[:-lag]) / n
+    statistic = d.mean() / np.sqrt(long_run_var / n)
+    return float(statistic), float(stats.norm.cdf(statistic))
+
+
 def evaluate_forecast(
     y_true: np.ndarray,
     y_pred_p50: np.ndarray,

@@ -7,8 +7,34 @@ import numpy as np
 from pathlib import Path
 from typing import Optional, Union, Tuple
 from datetime import datetime, timedelta
+import time
 import requests
 from io import StringIO
+
+
+def _get_json(url: str, params: dict, retries: int = 6, timeout: int = 60) -> dict:
+    """GET with exponential backoff on rate limiting (HTTP 429) and transient errors."""
+    for attempt in range(retries):
+        try:
+            response = requests.get(url, params=params, timeout=timeout)
+            if response.status_code != 429 and response.status_code < 500:
+                response.raise_for_status()   # other 4xx: permanent, don't retry
+                return response.json()
+            error = requests.HTTPError(f"HTTP {response.status_code}", response=response)
+        except (requests.ConnectionError, requests.Timeout) as exc:
+            error = exc
+        if attempt == retries - 1:
+            raise error
+        time.sleep(5 * 2 ** attempt)
+
+
+def _yearly_chunks(start: pd.Timestamp, end: pd.Timestamp):
+    """Split [start, end] into chunks of at most one year (API request size limit)."""
+    chunk_start = start
+    while chunk_start <= end:
+        chunk_end = min(chunk_start + pd.DateOffset(years=1) - pd.Timedelta(minutes=15), end)
+        yield chunk_start, chunk_end
+        chunk_start = chunk_end + pd.Timedelta(minutes=15)
 
 
 class EnergyChartsLoader:
@@ -348,6 +374,85 @@ class EnergyChartsLoader:
         available_cols = [col for col in feature_cols if col in df.columns]
         
         return df[available_cols]
+
+    # Day-ahead forecasts published by the TSOs before the auction closes (via Energy-Charts).
+    # Unlike realised generation, these are genuinely available at forecast time.
+    FORECAST_TYPES = ['load', 'solar', 'wind_onshore', 'wind_offshore']
+
+    def load_hourly_prices(self, zone: str, start_date: str, end_date: str,
+                           use_cache: bool = True) -> pd.DataFrame:
+        """
+        Hourly DAA prices (UTC) for a long history, downloaded in yearly chunks.
+        Sub-hourly (15-min) prices are averaged to hourly.
+        """
+        cache_file = self.cache_dir / zone.lower() / f"prices_hourly_{start_date}_{end_date}.csv"
+        if use_cache and cache_file.exists():
+            return pd.read_csv(cache_file, parse_dates=['timestamp'])
+
+        frames = []
+        for s, e in _yearly_chunks(pd.Timestamp(start_date, tz='UTC'), pd.Timestamp(end_date, tz='UTC')):
+            data = _get_json(f"{self.BASE_URL}/price",
+                             {'bzn': zone, 'start': s.strftime('%Y-%m-%dT%H:%MZ'),
+                              'end': e.strftime('%Y-%m-%dT%H:%MZ')})
+            frames.append(pd.DataFrame({
+                'timestamp': pd.to_datetime(data['unix_seconds'], unit='s', utc=True),
+                'price_eur_mwh': pd.to_numeric(pd.Series(data['price']), errors='coerce')}))
+        df = (pd.concat(frames).set_index('timestamp')['price_eur_mwh']
+              .resample('1h').mean().reset_index())
+
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        df.to_csv(cache_file, index=False)
+        return df
+
+    def load_power_forecasts(self, zone: str, start_date: str, end_date: str,
+                             use_cache: bool = True) -> pd.DataFrame:
+        """
+        Hourly TSO day-ahead forecasts (MW, UTC): load, solar and wind (onshore + offshore).
+
+        Returns columns ['timestamp', 'load_fc_mw', 'solar_fc_mw', 'wind_fc_mw'].
+        Offshore wind does not exist in ES; it is summed into wind so both zones
+        share the same feature vocabulary.
+        """
+        cache_file = self.cache_dir / zone.lower() / f"forecasts_hourly_{start_date}_{end_date}.csv"
+        if use_cache and cache_file.exists():
+            return pd.read_csv(cache_file, parse_dates=['timestamp'])
+
+        series = {}
+        for prod in self.FORECAST_TYPES:
+            frames = []
+            for s, e in _yearly_chunks(pd.Timestamp(start_date, tz='UTC'), pd.Timestamp(end_date, tz='UTC')):
+                try:
+                    data = _get_json(f"{self.BASE_URL}/public_power_forecast",
+                                     {'country': self.ZONE_MAPPING[zone], 'production_type': prod,
+                                      'forecast_type': 'day-ahead',
+                                      'start': s.strftime('%Y-%m-%dT%H:%MZ'),
+                                      'end': e.strftime('%Y-%m-%dT%H:%MZ')})
+                except requests.HTTPError:
+                    if prod == 'wind_offshore':   # not available for every zone
+                        break
+                    raise
+                if not data.get('unix_seconds'):
+                    continue
+                frames.append(pd.Series(
+                    pd.to_numeric(pd.Series(data['forecast_values']), errors='coerce').values,
+                    index=pd.to_datetime(data['unix_seconds'], unit='s', utc=True)))
+                time.sleep(1)
+            if frames:
+                series[prod] = pd.concat(frames).resample('1h').mean()
+
+        df = pd.DataFrame(series)
+        offshore = df['wind_offshore'].fillna(0) if 'wind_offshore' in df else 0
+        out = pd.DataFrame({
+            'load_fc_mw': df['load'],
+            'solar_fc_mw': df['solar'],
+            'wind_fc_mw': df['wind_onshore'] + offshore,
+        })
+        out.index.name = 'timestamp'
+        out = out.reset_index()
+
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        out.to_csv(cache_file, index=False)
+        return out
 
 
 class WeatherDataLoader:
